@@ -1,12 +1,13 @@
 .PHONY: build test test-integration vet fmt-check check run generate-contracts
 
-PROTO_ROOT := ../../contracts
+PROTO_ROOT := contracts
 
 generate-contracts:
 	protoc -I $(PROTO_ROOT) \
-		--go_out=. --go_opt=module=bridgepay-refund-go --go_opt=Mrefund/v1/core.proto=bridgepay-refund-go/internal/coreclient/pb \
-		--go-grpc_out=. --go-grpc_opt=module=bridgepay-refund-go --go-grpc_opt=Mrefund/v1/core.proto=bridgepay-refund-go/internal/coreclient/pb \
-		$(PROTO_ROOT)/refund/v1/core.proto
+		--go_out=. --go_opt=module=bridgepay-refund-go --go_opt=Mrefund/v1/core.proto=bridgepay-refund-go/internal/coreclient/pb --go_opt=Mrefund/v1/gateway.proto=bridgepay-refund-go/internal/coreclient/pb \
+		--go-grpc_out=. --go-grpc_opt=module=bridgepay-refund-go --go-grpc_opt=Mrefund/v1/core.proto=bridgepay-refund-go/internal/coreclient/pb --go-grpc_opt=Mrefund/v1/gateway.proto=bridgepay-refund-go/internal/coreclient/pb \
+		$(PROTO_ROOT)/refund/v1/core.proto \
+		$(PROTO_ROOT)/refund/v1/gateway.proto
 
 build:
 	mkdir -p bin

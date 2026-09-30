@@ -13,9 +13,9 @@ for a later production cutover. It does not authorize or perform that cutover.
 | Node and Go golden behavior | `TestNodeAndGoMatchGoldenRefundFixture` runs the compiled Node helpers and Go code against the same sanitized fixture and synthetic RSA key. It compares validation, amount breakdown, payout/idempotency payload, masked history, status wording, and signature. | Proven |
 | Existing PostgreSQL schema | Storage integration tests run against a schema-only copy of `kcic_refund` and cover atomic writes, duplicate barriers, concurrent creates, callbacks, payout evidence, Backoffice retry, and report rows. | Proven |
 | Existing encrypted rows | `TestNodeAndGoEncryptedRowsAreMutuallyReadable` has Node create an Encryptor-backed synthetic row for Go to decrypt and has Go create a synthetic row for Node to decrypt. Both rows are removed. | Proven |
-| Gateway-to-Refund RabbitMQ | The Gateway-Go client and real Refund-Go server interoperate over local RabbitMQ for bank list, status, create, application errors, correlation, and graceful drain. | Proven |
+| Gateway-to-Refund gRPC | The real Gateway-Go client and Refund-Go server interoperate over all six typed unary RPCs. HTTP contract tests retain validation, status, and response-body compatibility. | Proven locally |
 | Broker failures | Live tests cover caller timeout/retry, unroutable publish, application error, background redelivery, retry exhaustion, drain, and DLQ. Side-effecting RPCs are not blindly replayed. | Proven |
-| Core credential boundary | The shared typed gRPC contract and environment selection are tested. Gateway never receives provider credentials. | Proven |
+| Core credential boundary | The real Refund-Go client and Core-Go server interoperate over the shared typed gRPC credential contract with a five-second call budget. Gateway never receives provider credentials. | Proven locally |
 | Iluma, Xendit, Ticketing | Contract tests use loopback fake servers and assert the existing URLs, headers, payloads, status mapping, callback behavior, and retry decisions. | Proven without external calls |
 | Reports and scheduled work | Report rows/XLSX and WIB schedule calculation are tested. Scheduler ownership remains disabled by default. | Proven; activation deferred to cutover |
 
@@ -131,7 +131,8 @@ Run tagged tests only with isolated PostgreSQL and local RabbitMQ/Node paths:
 go test -tags=integration ./internal/storage ./internal/refund ./internal/compat ./internal/rmqserver
 ```
 
-Gateway's tagged RabbitMQ tests provide the other half of the live
-Gateway-to-Refund proof. Temporary databases, queues, and synthetic rows must
+Gateway's tagged gRPC test provides the live Gateway-to-Refund proof, and
+Refund's tagged test provides the Refund-to-Core proof. Temporary databases,
+queues, and synthetic rows must
 be absent after the run, and the Node consumer/scheduler must remain the only
 production owners until a separately approved Step 11 cutover.

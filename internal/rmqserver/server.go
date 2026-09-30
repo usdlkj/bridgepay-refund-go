@@ -1,5 +1,6 @@
-// Package rmqserver implements the NestJS-compatible Gateway-to-Refund
-// RabbitMQ boundary and the durable background-event retry path.
+// Package rmqserver implements Refund-Go's durable background-event retry
+// path. Generic request/reply decoding remains only to drain migration-era
+// messages; Gateway-Go no longer registers or uses synchronous commands.
 package rmqserver
 
 import (

@@ -78,7 +78,9 @@ func (c *Client) PaymentGatewayCredential(ctx context.Context, code string) (str
 	if code == "" {
 		return "", errors.New("payment gateway code is required")
 	}
-	response, err := c.core.GetPaymentGatewayCredential(ctx, &refundv1.GetPaymentGatewayCredentialRequest{PaymentGatewayCode: code})
+	callCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	response, err := c.core.GetPaymentGatewayCredential(callCtx, &refundv1.GetPaymentGatewayCredentialRequest{PaymentGatewayCode: code})
 	if err != nil {
 		return "", err
 	}

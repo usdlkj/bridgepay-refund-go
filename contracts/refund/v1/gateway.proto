@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package bridgepay.refund.v1;
+
+option go_package = "bridgepay-payment-contracts/refund/v1;refundv1";
+
+// RefundGatewayService is the synchronous Gateway-Go to Refund-Go boundary.
+// Durable background work remains on RabbitMQ.
+service RefundGatewayService {
+  rpc ListBanks(ListBanksRequest) returns (RefundHTTPResponse);
+  rpc CheckAccount(CheckAccountRequest) returns (RefundHTTPResponse);
+  rpc AcceptIlumaCallback(AcceptIlumaCallbackRequest) returns (RefundHTTPResponse);
+  rpc CreateRefund(CreateRefundRequest) returns (RefundHTTPResponse);
+  rpc GetRefundStatus(GetRefundStatusRequest) returns (RefundHTTPResponse);
+  rpc AcceptXenditCallback(AcceptXenditCallbackRequest) returns (RefundHTTPResponse);
+}
+
+message RefundRequestContext {
+  string request_id = 1;
+  string idempotency_key = 2;
+}
+
+message RefundAccount {
+  string bank_id = 1;
+  string account_no = 2;
+  string account_type = 3;
+  string id_no = 4;
+  string id_type = 5;
+  string name = 6;
+}
+
+message ListBanksRequest {
+  RefundRequestContext context = 1;
+}
+
+message CheckAccountRequest {
+  RefundRequestContext context = 1;
+  RefundAccount account = 2;
+  string sign_msg = 3;
+}
+
+message RefundInvoice {
+  string order_id = 1;
+  optional int64 refund_amount = 2;
+  string reason = 3;
+  string passengers = 4;
+  string original_order_number = 5;
+  string notify_url = 6;
+  string ticket_office = 7;
+}
+
+message CreateRefundRequest {
+  RefundRequestContext context = 1;
+  RefundAccount account = 2;
+  RefundInvoice invoice = 3;
+  string sign_msg = 4;
+  optional int64 ticket_call = 5;
+}
+
+message GetRefundStatusRequest {
+  RefundRequestContext context = 1;
+  string order_id = 2;
+  string sign_msg = 3;
+}
+
+message AcceptIlumaCallbackRequest {
+  RefundRequestContext context = 1;
+  bytes payload_json = 2;
+}
+
+message AcceptXenditCallbackRequest {
+  RefundRequestContext context = 1;
+  bytes payload_json = 2;
+  string callback_token = 3;
+}
+
+// body_json is produced by Refund-Go and returned verbatim by Gateway-Go.
+// This preserves the signed public HTTP contract without moving signing or
+// business wording into Gateway.
+message RefundHTTPResponse {
+  bytes body_json = 1;
+}

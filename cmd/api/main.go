@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	"bridgepay-refund-go/internal/backoffice"
 	"bridgepay-refund-go/internal/coreclient"
 	"bridgepay-refund-go/internal/encryptor"
+	"bridgepay-refund-go/internal/grpcserver"
 	"bridgepay-refund-go/internal/health"
 	"bridgepay-refund-go/internal/httpapi"
 	"bridgepay-refund-go/internal/iluma"
@@ -117,7 +119,25 @@ func main() {
 		}()
 		return true
 	})
-	registerHandlers(refundConsumer, bankService, ilumaService, refundService, webhookService, cfg.RabbitMQMaxRetries)
+	registerBackgroundHandlers(refundConsumer, ilumaService, webhookService, cfg.RabbitMQMaxRetries)
+	grpcTLS, err := grpcserver.ServerTLSConfig(cfg.RefundGRPCTLSCertFile, cfg.RefundGRPCTLSKeyFile, cfg.RefundGRPCTLSClientCAFile, cfg.RefundGRPCAllowedClientName)
+	if err != nil {
+		logger.Error("Refund gRPC TLS configuration failed", "error", err)
+		os.Exit(1)
+	}
+	grpcListener, err := net.Listen("tcp", cfg.RefundGRPCListenAddress)
+	if err != nil {
+		logger.Error("Refund gRPC listener failed", "error", err)
+		os.Exit(1)
+	}
+	grpcService := grpcserver.New(grpcTLS, tracker, logger, grpcserver.Dependencies{
+		Banks: bankService, Iluma: ilumaService, Refund: refundService, Webhook: webhookService,
+	})
+	grpcErrors := make(chan error, 1)
+	go func() {
+		logger.Info("gRPC server started", "address", cfg.RefundGRPCListenAddress)
+		grpcErrors <- grpcService.Serve(grpcListener)
+	}()
 	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
 	defer stopScheduler()
 	if cfg.ReportSchedulerEnabled {
@@ -184,6 +204,11 @@ func main() {
 			logger.Error("refund RabbitMQ consumer failed", "error", err)
 			exitCode = 1
 		}
+	case err := <-grpcErrors:
+		if err != nil {
+			logger.Error("Refund gRPC server failed", "error", err)
+			exitCode = 1
+		}
 	}
 
 	started := time.Now()
@@ -199,11 +224,21 @@ func main() {
 		"side_effecting", snapshot.SideEffecting,
 		"by_kind", snapshot.ByKind,
 	)
+	grpcStopped := make(chan struct{})
+	go func() {
+		grpcService.GracefulStop()
+		close(grpcStopped)
+	}()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Warn("http drain incomplete", "error", err)
+	}
+	select {
+	case <-grpcStopped:
+	case <-shutdownCtx.Done():
+		grpcService.Stop()
 	}
 	if err := tracker.Wait(shutdownCtx); err != nil {
 		unfinished := tracker.Snapshot()
@@ -220,73 +255,7 @@ func main() {
 	}
 }
 
-func registerHandlers(server *rmqserver.Server, banks *refundbank.Service, validation *iluma.Service, refunds *refund.Service, webhooks *refund.WebhookService, maxRetries int) {
-	server.RegisterCommand("refund.bankList", func(ctx context.Context, _ json.RawMessage) (any, error) {
-		return banks.PublicList(ctx)
-	})
-	server.RegisterCommand("iluma.checkAccount", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var request iluma.CheckAccountRequest
-		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, &rmqserver.ApplicationError{Payload: map[string]any{"message": []string{"invalid request body"}, "error": "Bad Request", "statusCode": 400}}
-		}
-		if problems := iluma.ValidateCheckAccount(request); len(problems) > 0 {
-			return nil, &rmqserver.ApplicationError{Payload: map[string]any{"message": problems, "error": "Bad Request", "statusCode": 400}}
-		}
-		response, err := validation.CheckAccount(ctx, request)
-		if err != nil {
-			return nil, &rmqserver.ApplicationError{Payload: map[string]any{"retCode": -1, "retMsg": "Failed to check account"}}
-		}
-		return response, nil
-	})
-	server.RegisterCommand("iluma.bankValidator", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		return validation.Callback(ctx, raw)
-	})
-	server.RegisterCommand("refund.create", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var request refund.CreateRequest
-		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, badRequest([]string{"invalid request body"})
-		}
-		if problems := refund.ValidateCreate(request); len(problems) > 0 {
-			return nil, badRequest(problems)
-		}
-		response, err := refunds.Create(ctx, request)
-		if err != nil {
-			return nil, refundApplicationError(err)
-		}
-		return response, nil
-	})
-	server.RegisterCommand("refund.status", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var request refund.StatusRequest
-		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, badRequest([]string{"invalid request body"})
-		}
-		if problems := refund.ValidateStatus(request); len(problems) > 0 {
-			return nil, badRequest(problems)
-		}
-		response, err := refunds.Status(ctx, request)
-		if err != nil {
-			return nil, refundApplicationError(err)
-		}
-		return response, nil
-	})
-	server.RegisterCommand("refund.webhook.xendit.disbursement", func(ctx context.Context, raw json.RawMessage) (any, error) {
-		var request struct {
-			Payload json.RawMessage `json:"payload"`
-			Headers string          `json:"headers"`
-		}
-		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, badRequest([]string{"invalid request body"})
-		}
-		response, err := webhooks.Accept(ctx, request.Headers, request.Payload)
-		if err != nil {
-			var public *refund.WebhookError
-			if errors.As(err, &public) {
-				return nil, &rmqserver.ApplicationError{Payload: public.Payload}
-			}
-			return nil, err
-		}
-		return response, nil
-	})
+func registerBackgroundHandlers(server *rmqserver.Server, validation *iluma.Service, webhooks *refund.WebhookService, maxRetries int) {
 	server.RegisterEvent("refund.iluma.poll", func(ctx context.Context, raw json.RawMessage) (any, error) {
 		var request iluma.PollRequest
 		if err := json.Unmarshal(raw, &request); err != nil {
@@ -304,17 +273,6 @@ func registerHandlers(server *rmqserver.Server, banks *refundbank.Service, valid
 		metadata, _ := rmqserver.MetadataFromContext(ctx)
 		return nil, webhooks.Process(ctx, request.ID, metadata.RetryCount, maxRetries)
 	})
-}
-
-func badRequest(problems []string) error {
-	return &rmqserver.ApplicationError{Payload: map[string]any{"message": problems, "error": "Bad Request", "statusCode": 400}}
-}
-func refundApplicationError(err error) error {
-	var public *refund.PublicError
-	if errors.As(err, &public) {
-		return &rmqserver.ApplicationError{Payload: public.Payload}
-	}
-	return &rmqserver.ApplicationError{Payload: map[string]any{"retCode": -1, "retMsg": "Failed to process refund request"}}
 }
 
 func newLogger(rawLevel string) *slog.Logger {

@@ -5,7 +5,7 @@ service remains the behavioral reference and rollback target until the parity
 plan is complete.
 
 Steps 9.2-9.8 provide the operational shell, compatible persistence layer,
-RabbitMQ server, typed Core-Go client, bank catalogue, and Iluma account
+typed gRPC boundaries, RabbitMQ background worker, bank catalogue, and Iluma account
 validation flow, refund creation and payout-status handling, and durable Xendit
 callback/Ticketing follow-up processing, Backoffice operations, reports, and
 cutover-gated scheduled work.
@@ -65,16 +65,21 @@ and remove them before returning.
 
 Contract and ownership documentation is in `docs/`.
 
-The Refund-to-Core client bindings are generated from the canonical shared
-proto with `make generate-contracts` and committed so the Docker build remains
-self-contained.
+The Refund gRPC bindings are generated from the repository-local contract copy
+with `make generate-contracts` and committed so clean checkouts and Docker
+builds remain self-contained. Cross-repository verification rejects contract
+drift.
 
 Database coexistence, transaction rules, schema readiness, and sensitive-data
 handling are documented in `docs/DATABASE_COMPATIBILITY.md`.
 
-RabbitMQ request/reply compatibility, retry/DLQ behavior, the no-replay rule
-for payout operations, cutover controls, and the typed Core-Go boundary are
+gRPC request/response compatibility, RabbitMQ background retry/DLQ behavior,
+the no-replay rule for payout operations, cutover controls, and the typed Core-Go boundary are
 documented in `docs/TRANSPORT_COMPATIBILITY.md`.
+
+The staged plan for moving Gateway-Go ↔ Refund-Go request/reply traffic to
+gRPC and hardening the existing Refund-Go → Core-Go gRPC boundary is in
+`docs/GRPC_COMMUNICATION_MIGRATION_PLAN.md`.
 
 Bank catalogue, account validation, provider compatibility, and deliberately
 preserved Node edge behavior are documented in

@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package bridgepay.refund.v1;
+
+option go_package = "bridgepay-payment-contracts/refund/v1;refundv1";
+
+// RefundCoreService is the synchronous, Go-only Refund-to-Core boundary.
+// Core owns payment-gateway credentials; Refund receives only the credential
+// requested for its provider and never reads Core's tables directly.
+service RefundCoreService {
+  rpc GetPaymentGatewayCredential(GetPaymentGatewayCredentialRequest)
+      returns (GetPaymentGatewayCredentialResponse);
+}
+
+message GetPaymentGatewayCredentialRequest {
+  string payment_gateway_code = 1;
+}
+
+message GetPaymentGatewayCredentialResponse {
+  // The decrypted provider credential envelope. Its JSON shape is provider
+  // specific and preserves the existing development/production object.
+  string credential_json = 1;
+}

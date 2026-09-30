@@ -64,7 +64,7 @@ func TestProductionRequiresOperationalSecrets(t *testing.T) {
 	t.Setenv("ILUMA_TOKEN", "")
 	t.Setenv("ILUMA_TOKEN_FILE", "")
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "SERVICE_TO_SERVICE_SECRET") || !strings.Contains(err.Error(), "ILUMA_TOKEN") || !strings.Contains(err.Error(), "CORE_GRPC_TLS_CA_FILE") {
+	if err == nil || !strings.Contains(err.Error(), "SERVICE_TO_SERVICE_SECRET") || !strings.Contains(err.Error(), "ILUMA_TOKEN") || !strings.Contains(err.Error(), "CORE_GRPC_TLS_CA_FILE") || !strings.Contains(err.Error(), "REFUND_GRPC_TLS_CERT_FILE") {
 		t.Fatalf("expected production secret errors, got %v", err)
 	}
 }
