@@ -1,0 +1,8 @@
+.git
+.github
+.env*
+bin
+api
+bridgepay-refund-go
+coverage.out
+*.log

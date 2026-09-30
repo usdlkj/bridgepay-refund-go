@@ -1,0 +1,210 @@
+{
+  "metadata": {
+    "source": "bridgepay-refund Node source",
+    "capturedAt": "2026-09-28",
+    "sanitized": true,
+    "externalCallsMade": false
+  },
+  "cases": [
+    {
+      "name": "account-check-success",
+      "pattern": { "cmd": "iluma.checkAccount" },
+      "request": {
+        "reqData": {
+          "account": {
+            "bankId": "BCA",
+            "accountNo": "0000000001",
+            "accountType": "SAVINGS",
+            "idNo": "SYNTHETIC-ID-1",
+            "idType": "1",
+            "name": "SYNTHETIC CUSTOMER"
+          }
+        },
+        "signMsg": "SYNTHETIC_REQUEST_SIGNATURE"
+      },
+      "expected": {
+        "retCode": 0,
+        "message": "Success",
+        "retData": { "status": "success" },
+        "signMsg": "<RSA_SHA256_SIGNATURE>"
+      },
+      "state": "bank_datas=pending/pending -> completed/success"
+    },
+    {
+      "name": "account-check-pending-timeout",
+      "pattern": { "cmd": "iluma.checkAccount" },
+      "provider": { "initialStatus": "pending", "pollResult": "timeout" },
+      "expected": {
+        "retCode": 0,
+        "message": "Success",
+        "retData": { "status": "failed" },
+        "signMsg": "<RSA_SHA256_SIGNATURE>"
+      },
+      "state": "bank_datas=pending/pending -> expired/failed; emit refund.iluma.poll"
+    },
+    {
+      "name": "account-check-provider-failure",
+      "pattern": { "cmd": "iluma.checkAccount" },
+      "provider": { "httpStatus": 429 },
+      "expected": {
+        "retCode": -1,
+        "retMsg": "<SANITIZED_MESSAGE>",
+        "errorCode": "ILUMA_RATE_LIMIT"
+      }
+    },
+    {
+      "name": "account-check-validation-failure",
+      "http": { "method": "POST", "path": "/api/v2/checkAccount" },
+      "request": { "reqData": { "account": { "bankId": "BCA" } } },
+      "expectedHttpStatus": 400,
+      "expectedShape": {
+        "statusCode": 400,
+        "message": "<CLASS_VALIDATOR_MESSAGE_ARRAY>",
+        "error": "Bad Request"
+      }
+    },
+    {
+      "name": "refund-create-success-pending",
+      "pattern": { "cmd": "refund.create" },
+      "request": {
+        "reqData": {
+          "account": {
+            "bankId": "BCA",
+            "accountNo": "0000000001",
+            "name": "SYNTHETIC CUSTOMER",
+            "accountType": "SAVINGS",
+            "idNo": "SYNTHETIC-ID-1",
+            "idType": "1"
+          },
+          "invoice": {
+            "orderId": "RF-SYNTH-0001",
+            "refundAmount": 100000,
+            "reason": "Synthetic cancellation",
+            "passengers": "SYNTHETIC CUSTOMER",
+            "originalOrderNumber": "ORD-SYNTH-0001",
+            "notifyUrl": "https://ticketing.invalid/refund/callback",
+            "ticketOffice": "SYNTHETIC-OFFICE"
+          }
+        },
+        "signMsg": "SYNTHETIC_REQUEST_SIGNATURE",
+        "ticketCall": 1
+      },
+      "providerStub": { "httpStatus": 200, "id": "po_synthetic_0001" },
+      "expected": {
+        "retCode": 0,
+        "retMsg": "Success",
+        "retData": {
+          "invoice": {
+            "orderId": "RF-SYNTH-0001",
+            "status": "PG process"
+          }
+        },
+        "signMsg": "<RSA_SHA256_SIGNATURE>"
+      },
+      "state": "pendingChecking -> pendingDisbursement"
+    },
+    {
+      "name": "refund-create-duplicate",
+      "pattern": { "cmd": "refund.create" },
+      "precondition": "refunds.refund_ga_number=RF-SYNTH-0001 exists",
+      "expectedRpcError": {
+        "retCode": -1,
+        "retMsg": "Duplicate Request"
+      },
+      "state": "unchanged"
+    },
+    {
+      "name": "refund-create-provider-failure",
+      "pattern": { "cmd": "refund.create" },
+      "providerStub": { "result": "error" },
+      "expectedRpcError": {
+        "retCode": -1,
+        "retMsg": "<SANITIZED_MESSAGE>"
+      },
+      "state": "existing refund -> fail; refund_logs row added"
+    },
+    {
+      "name": "refund-status",
+      "pattern": { "cmd": "refund.status" },
+      "request": {
+        "reqData": { "invoice": { "orderId": "RF-SYNTH-0001" } },
+        "signMsg": "SYNTHETIC_REQUEST_SIGNATURE"
+      },
+      "expected": {
+        "retCode": 0,
+        "retData": {
+          "invoice": {
+            "balance": 100000,
+            "bankCode": "BCA",
+            "bankNo": "******0001",
+            "curType": "360",
+            "fee": "2100",
+            "mwNo": "<ULID>",
+            "orderId": "RF-SYNTH-0001",
+            "pgCode": "xendit",
+            "rate": "2100",
+            "refundAmount": 100000,
+            "status": "PG process",
+            "tradeTime": "20260928120000"
+          }
+        },
+        "retMsg": "success",
+        "signMsg": "<RSA_SHA256_SIGNATURE>"
+      }
+    },
+    {
+      "name": "xendit-callback-success",
+      "http": {
+        "method": "POST",
+        "path": "/api/v2/webhook/xendit/disbursement",
+        "headers": { "x-callback-token": "<SECRET>" }
+      },
+      "request": {
+        "event": "payout.succeeded",
+        "business_id": "business_synthetic",
+        "created": "2026-09-28T05:00:00.000Z",
+        "data": {
+          "id": "po_synthetic_0001",
+          "amount": 100000,
+          "channel_code": "ID_BCA",
+          "currency": "IDR",
+          "status": "SUCCEEDED",
+          "reference_id": "RF-SYNTH-0001",
+          "created": "2026-09-28T05:00:00.000Z",
+          "updated": "2026-09-28T05:01:00.000Z",
+          "channel_properties": { "account_number": "0000000001" }
+        }
+      },
+      "expectedImmediateHttpResponse": { "message": "OK" },
+      "state": "pendingDisbursement|retry -> success -> done only after accepted ticketing response"
+    },
+    {
+      "name": "xendit-callback-retryable-failure",
+      "requestData": {
+        "status": "FAILED",
+        "failure_code": "TEMPORARY_CHANNEL_ERROR",
+        "reference_id": "RF-SYNTH-0001"
+      },
+      "precondition": "retryAttempt length below REFUND_TRY_COUNT",
+      "expectedResponse": { "message": "OK" },
+      "state": "pendingDisbursement|retry -> fail with retryDate"
+    },
+    {
+      "name": "xendit-callback-terminal-failure",
+      "requestData": {
+        "status": "FAILED",
+        "failure_code": "INVALID_DESTINATION",
+        "reference_id": "RF-SYNTH-0001"
+      },
+      "expectedResponse": { "message": "OK" },
+      "state": "pendingDisbursement|retry -> fail; notify ticketing failure"
+    },
+    {
+      "name": "iluma-callback-unknown",
+      "pattern": { "cmd": "iluma.bankValidator" },
+      "request": { "id": "iluma_synthetic_unknown", "status": "completed" },
+      "expected": { "message": "Ignored" },
+      "state": "unchanged"
+    }
+  ]
+}

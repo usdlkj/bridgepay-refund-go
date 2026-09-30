@@ -1,0 +1,37 @@
+{
+  "request": {
+    "pattern": { "cmd": "refund.status" },
+    "data": {
+      "reqData": { "invoice": { "orderId": "RF-SYNTH-0001" } },
+      "signMsg": "SYNTHETIC_REQUEST_SIGNATURE"
+    },
+    "id": "synthetic-correlation-0001"
+  },
+  "successReply": {
+    "response": {
+      "retCode": 0,
+      "retData": {
+        "invoice": {
+          "curType": "360",
+          "mwNo": "<ULID>",
+          "orderId": "RF-SYNTH-0001",
+          "pgCode": "xendit",
+          "refundAmount": 100000,
+          "status": "PG process"
+        }
+      },
+      "retMsg": "success",
+      "signMsg": "<RSA_SHA256_SIGNATURE>"
+    },
+    "isDisposed": true,
+    "id": "synthetic-correlation-0001"
+  },
+  "applicationErrorReply": {
+    "err": {
+      "retCode": -1,
+      "retMsg": "Duplicate Request"
+    },
+    "isDisposed": true,
+    "id": "synthetic-correlation-0001"
+  }
+}

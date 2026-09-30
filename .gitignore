@@ -1,0 +1,8 @@
+/.env
+/.env.local
+/bin/
+/coverage.out
+/bridgepay-refund-go
+/api
+*.log
+.DS_Store

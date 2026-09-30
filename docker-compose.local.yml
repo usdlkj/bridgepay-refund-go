@@ -1,0 +1,31 @@
+services:
+  refund-go:
+    build:
+      context: .
+      args:
+        VERSION: local
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${REFUND_GO_PORT:-4000}:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "${REFUND_PRIVATE_KEY_FILE:?set REFUND_PRIVATE_KEY_FILE}:/run/secrets/refund-private-key.pem:ro"
+    environment:
+      PORT: "4000"
+      DB_HOST: host.docker.internal
+      REDIS_URL: redis://host.docker.internal:6379
+      RABBITMQ_URL: amqp://user:password@host.docker.internal:5672
+      # Do not compete with the Node consumer before later business steps are complete.
+      RABBITMQ_CONSUMER_ENABLED: "false"
+      REPORT_SCHEDULER_ENABLED: "false"
+      CORE_GRPC_ADDRESS: host.docker.internal:50051
+      KEY_FILE_PRIVATE: /run/secrets/refund-private-key.pem
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:4000/health/liveness"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    stop_grace_period: 30s
