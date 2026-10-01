@@ -66,7 +66,8 @@ lock must show a single active job leader.
 
 ## Incremental cutover order
 
-Use the Step 11 production controls and move one boundary at a time:
+Complete the Step 11 EKS deployment preparation and Step 12 functional parity,
+then use the Step 13 production controls and move one boundary at a time:
 
 1. Deploy Refund-Go with both ownership flags disabled and require readiness.
 2. Route read-only bank, status, Backoffice, and report requests; compare
@@ -135,4 +136,4 @@ Gateway's tagged gRPC test provides the live Gateway-to-Refund proof, and
 Refund's tagged test provides the Refund-to-Core proof. Temporary databases,
 queues, and synthetic rows must
 be absent after the run, and the Node consumer/scheduler must remain the only
-production owners until a separately approved Step 11 cutover.
+production owners until a separately approved Step 13 cutover.

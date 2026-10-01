@@ -237,6 +237,16 @@ func (c Config) Validate() error {
 		_ = file.Close()
 	}
 	if c.Environment == "production" || c.Environment == "staging" {
+		if !hasURLScheme(c.RedisURL, "rediss") {
+			problems = append(problems, "REDIS_URL must use rediss://")
+		}
+		if !hasURLScheme(c.RabbitMQURL, "amqps") {
+			problems = append(problems, "RABBITMQ_URL must use amqps://")
+		}
+		dbURL, err := url.Parse(c.DatabaseURL)
+		if err != nil || dbURL.Query().Get("sslmode") != "verify-full" {
+			problems = append(problems, "DATABASE_URL must use sslmode=verify-full")
+		}
 		if c.CoreGRPCTLSCAFile == "" || c.CoreGRPCTLSCertFile == "" || c.CoreGRPCTLSKeyFile == "" {
 			problems = append(problems, "CORE_GRPC_TLS_CA_FILE, CORE_GRPC_TLS_CERT_FILE, and CORE_GRPC_TLS_KEY_FILE are required")
 		}
@@ -254,6 +264,11 @@ func (c Config) Validate() error {
 		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+func hasURLScheme(raw, scheme string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == scheme && u.Host != ""
 }
 
 func databaseURL() (string, error) {

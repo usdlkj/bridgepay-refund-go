@@ -92,3 +92,15 @@ func TestLoadReadsRabbitMQTransportControls(t *testing.T) {
 		t.Fatalf("transport controls = enabled:%t prefetch:%d delay:%s retries:%d", cfg.RabbitMQConsumerEnabled, cfg.RabbitMQPrefetch, cfg.RabbitMQRetryDelay, cfg.RabbitMQMaxRetries)
 	}
 }
+
+func TestProductionTransportSchemesRequireTLSAndHost(t *testing.T) {
+	if !hasURLScheme("rediss://cache.example:6379", "rediss") {
+		t.Fatal("rediss URL should be accepted")
+	}
+	if hasURLScheme("redis://cache.example:6379", "rediss") || hasURLScheme("rediss://", "rediss") {
+		t.Fatal("plaintext or hostless Redis URL should be rejected")
+	}
+	if !hasURLScheme("amqps://broker.example:5671", "amqps") || hasURLScheme("amqp://broker.example:5672", "amqps") {
+		t.Fatal("RabbitMQ URL must use TLS")
+	}
+}
