@@ -6,13 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
-func ServerTLSConfig(certFile, keyFile, clientCAFile, allowedClientName string) (*tls.Config, error) {
+func ServerTLSConfig(certFile, keyFile, clientCAFile, allowedClientName string, additionalAllowedClientNames ...string) (*tls.Config, error) {
 	if certFile == "" && keyFile == "" && clientCAFile == "" {
 		return nil, nil
 	}
-	if certFile == "" || keyFile == "" || clientCAFile == "" || allowedClientName == "" {
+	allowedNames := append([]string{allowedClientName}, additionalAllowedClientNames...)
+	for i := range allowedNames {
+		allowedNames[i] = strings.TrimSpace(allowedNames[i])
+	}
+	if certFile == "" || keyFile == "" || clientCAFile == "" || allowedNames[0] == "" {
 		return nil, errors.New("Refund gRPC mTLS requires certificate, key, client CA, and allowed client name")
 	}
 	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -34,10 +39,15 @@ func ServerTLSConfig(certFile, keyFile, clientCAFile, allowedClientName string) 
 			if len(state.PeerCertificates) == 0 {
 				return errors.New("Refund gRPC client certificate is required")
 			}
-			if err := state.PeerCertificates[0].VerifyHostname(allowedClientName); err != nil {
+			for _, name := range allowedNames {
+				if name != "" && state.PeerCertificates[0].VerifyHostname(name) == nil {
+					return nil
+				}
+			}
+			if len(allowedNames) > 0 {
 				return errors.New("Refund gRPC client identity is not allowed")
 			}
-			return nil
+			return errors.New("Refund gRPC client identity is not configured")
 		},
 	}, nil
 }

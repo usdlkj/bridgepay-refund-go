@@ -10,22 +10,36 @@ import (
 	"strings"
 	"time"
 
+	"bridgepay-refund-go/internal/backoffice"
+	refundbackofficev1 "bridgepay-refund-go/internal/backofficepb"
 	refundv1 "bridgepay-refund-go/internal/coreclient/pb"
 	"bridgepay-refund-go/internal/iluma"
 	"bridgepay-refund-go/internal/lifecycle"
 	"bridgepay-refund-go/internal/refund"
 	"bridgepay-refund-go/internal/refundbank"
+	"bridgepay-refund-go/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type Dependencies struct {
-	Banks interface {
+	BackofficeJWTSecret  string
+	GatewayClientName    string
+	BackofficeClientName string
+	Banks                interface {
 		PublicList(context.Context) (refundbank.PublicListResponse, error)
+		List(context.Context, []storage.BankFilter) ([]refundbank.Record, error)
+		Update(context.Context, string, *storage.BankStatus, **time.Time) (refundbank.Record, error)
+		Sync(context.Context) error
+	}
+	Backoffice interface {
+		List(context.Context, []storage.RefundFilter) ([]backoffice.Refund, error)
 	}
 	Iluma interface {
 		CheckAccount(context.Context, iluma.CheckAccountRequest) (iluma.CheckAccountResponse, error)
@@ -55,18 +69,144 @@ func New(tlsConfig *tls.Config, tracker *lifecycle.Tracker, logger *slog.Logger,
 	options := []grpc.ServerOption{
 		grpc.MaxRecvMsgSize(1 << 20),
 		grpc.MaxSendMsgSize(1 << 20),
-		grpc.ChainUnaryInterceptor(admissionInterceptor(tracker), deadlineInterceptor(), loggingInterceptor(logger), recoveryInterceptor(logger)),
+		grpc.ChainUnaryInterceptor(admissionInterceptor(tracker), clientIdentityInterceptor(deps.BackofficeJWTSecret, deps.GatewayClientName, deps.BackofficeClientName), deadlineInterceptor(), loggingInterceptor(logger), recoveryInterceptor(logger)),
 	}
 	if tlsConfig != nil {
 		options = append(options, grpc.Creds(credentials.NewTLS(tlsConfig)))
 	}
 	server := grpc.NewServer(options...)
 	refundv1.RegisterRefundGatewayServiceServer(server, &service{deps: deps})
+	refundbackofficev1.RegisterBackofficeRefundServiceServer(server, &backofficeService{deps: deps})
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(refundv1.RefundGatewayService_ServiceDesc.ServiceName, healthv1.HealthCheckResponse_SERVING)
 	healthv1.RegisterHealthServer(server, healthServer)
 	return server
+}
+
+type backofficeService struct {
+	refundbackofficev1.UnimplementedBackofficeRefundServiceServer
+	deps Dependencies
+}
+
+func (s *backofficeService) ListRefunds(ctx context.Context, request *refundbackofficev1.ListRequest) (*refundbackofficev1.JsonResponse, error) {
+	filters, err := requestFilters(request.GetQuery(), 5)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if s.deps.Backoffice == nil {
+		return nil, status.Error(codes.Unavailable, "refund backoffice service unavailable")
+	}
+	result, err := s.deps.Backoffice.List(ctx, filters)
+	if err != nil {
+		return nil, mapBackofficeError(err)
+	}
+	return jsonStructResponse(result)
+}
+
+func (s *backofficeService) ListBanks(ctx context.Context, request *refundbackofficev1.ListRequest) (*refundbackofficev1.JsonResponse, error) {
+	if err := RequireBackofficeRoles(ctx, "ADMIN", "SUPER_ADMIN"); err != nil {
+		return nil, err
+	}
+	filters, err := requestFilters(request.GetQuery(), 2)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if s.deps.Banks == nil {
+		return nil, status.Error(codes.Unavailable, "bank service unavailable")
+	}
+	bankFilters := make([]storage.BankFilter, 0, len(filters))
+	for _, filter := range filters {
+		bankFilters = append(bankFilters, storage.BankFilter{Column: filter.Column, Value: filter.Value})
+	}
+	result, err := s.deps.Banks.List(ctx, bankFilters)
+	if err != nil {
+		return nil, mapBackofficeError(err)
+	}
+	return jsonStructResponse(result)
+}
+
+func (s *backofficeService) SetBankEnabled(ctx context.Context, request *refundbackofficev1.SetBankEnabledRequest) (*refundbackofficev1.JsonResponse, error) {
+	if err := RequireBackofficeRoles(ctx, "ADMIN", "SUPER_ADMIN"); err != nil {
+		return nil, err
+	}
+	if request.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "bank id is required")
+	}
+	if s.deps.Banks == nil {
+		return nil, status.Error(codes.Unavailable, "bank service unavailable")
+	}
+	state := storage.BankDisabled
+	if request.GetEnabled() {
+		state = storage.BankEnabled
+	}
+	result, err := s.deps.Banks.Update(ctx, request.GetId(), &state, nil)
+	if err != nil {
+		return nil, mapBackofficeError(err)
+	}
+	return jsonStructResponse(result)
+}
+
+func (s *backofficeService) SyncBanks(ctx context.Context, _ *emptypb.Empty) (*refundbackofficev1.JsonResponse, error) {
+	if s.deps.Banks == nil {
+		return nil, status.Error(codes.Unavailable, "bank service unavailable")
+	}
+	if err := s.deps.Banks.Sync(ctx); err != nil {
+		return nil, mapBackofficeError(err)
+	}
+	return jsonStructResponse(map[string]any{"status": 200, "message": "Success"})
+}
+
+func requestFilters(query *structpb.Struct, maxColumn int) ([]storage.RefundFilter, error) {
+	if query == nil {
+		return nil, nil
+	}
+	raw := query.AsMap()["query"]
+	if raw == nil {
+		return nil, nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, errors.New("query must be an array")
+	}
+	filters := make([]storage.RefundFilter, 0, len(items))
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("query items must be objects")
+		}
+		column, ok := item["data"].(float64)
+		if !ok || column < 0 || column > float64(maxColumn) || column != float64(int(column)) {
+			return nil, errors.New("query.data is out of range")
+		}
+		search, _ := item["search"].(map[string]any)
+		value, _ := search["value"].(string)
+		filters = append(filters, storage.RefundFilter{Column: int(column), Value: value})
+	}
+	return filters, nil
+}
+
+func jsonStructResponse(value any) (*refundbackofficev1.JsonResponse, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "encode response")
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return nil, status.Error(codes.Internal, "decode response")
+	}
+	data, err := structpb.NewValue(decoded)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "encode response")
+	}
+	return &refundbackofficev1.JsonResponse{Data: data}, nil
+}
+
+func mapBackofficeError(err error) error {
+	if errors.Is(err, storage.ErrNotFound) {
+		return status.Error(codes.NotFound, "record not found")
+	}
+	return status.Error(codes.Internal, "refund operation failed")
 }
 
 func (s *service) ListBanks(ctx context.Context, request *refundv1.ListBanksRequest) (*refundv1.RefundHTTPResponse, error) {

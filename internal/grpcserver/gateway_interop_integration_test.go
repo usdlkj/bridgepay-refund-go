@@ -19,7 +19,10 @@ import (
 	"bridgepay-refund-go/internal/refundbank"
 )
 
-type interopFixture struct{ called chan struct{} }
+type interopFixture struct {
+	banksFixture
+	called chan struct{}
+}
 
 func (f *interopFixture) record() { f.called <- struct{}{} }
 func (f *interopFixture) PublicList(context.Context) (refundbank.PublicListResponse, error) {

@@ -22,24 +22,26 @@ type Config struct {
 	DatabaseURL string
 	RedisURL    string
 
-	RabbitMQURL                 string
-	RabbitMQRefundQueue         string
-	RabbitMQEncryptorQueue      string
-	RabbitMQConsumerEnabled     bool
-	RabbitMQPrefetch            int
-	RabbitMQRetryDelay          time.Duration
-	RabbitMQMaxRetries          int
-	ReportSchedulerEnabled      bool
-	CoreGRPCAddress             string
-	CoreGRPCTLSCAFile           string
-	CoreGRPCTLSCertFile         string
-	CoreGRPCTLSKeyFile          string
-	CoreGRPCTLSServerName       string
-	RefundGRPCListenAddress     string
-	RefundGRPCTLSCertFile       string
-	RefundGRPCTLSKeyFile        string
-	RefundGRPCTLSClientCAFile   string
-	RefundGRPCAllowedClientName string
+	RabbitMQURL                    string
+	RabbitMQRefundQueue            string
+	RabbitMQEncryptorQueue         string
+	RabbitMQConsumerEnabled        bool
+	RabbitMQPrefetch               int
+	RabbitMQRetryDelay             time.Duration
+	RabbitMQMaxRetries             int
+	ReportSchedulerEnabled         bool
+	CoreGRPCAddress                string
+	CoreGRPCTLSCAFile              string
+	CoreGRPCTLSCertFile            string
+	CoreGRPCTLSKeyFile             string
+	CoreGRPCTLSServerName          string
+	RefundGRPCListenAddress        string
+	RefundGRPCTLSCertFile          string
+	RefundGRPCTLSKeyFile           string
+	RefundGRPCTLSClientCAFile      string
+	RefundGRPCAllowedClientName    string
+	RefundGRPCBackofficeClientName string
+	BackofficeJWTSecret            string
 
 	IlumaBaseURL         string
 	XenditBaseURL        string
@@ -60,28 +62,29 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment:                 envDefault("NODE_ENV", "development"),
-		HTTPAddress:                 ":" + envDefault("PORT", "4000"),
-		LogLevel:                    envDefault("LOG_LEVEL", "info"),
-		RedisURL:                    envDefault("REDIS_URL", "redis://localhost:6379"),
-		RabbitMQURL:                 envDefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672"),
-		RabbitMQRefundQueue:         envDefault("RABBITMQ_QUEUE", "bridgepay-refund"),
-		RabbitMQEncryptorQueue:      envDefault("RABBITMQ_ENCRYPTOR_QUEUE", "bridgepay-encryptor"),
-		CoreGRPCTLSCAFile:           strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_CA_FILE")),
-		CoreGRPCTLSCertFile:         strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_CERT_FILE")),
-		CoreGRPCTLSKeyFile:          strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_KEY_FILE")),
-		CoreGRPCTLSServerName:       strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_SERVER_NAME")),
-		CoreGRPCAddress:             envDefault("CORE_GRPC_ADDRESS", "localhost:50051"),
-		RefundGRPCListenAddress:     envDefault("REFUND_GRPC_LISTEN_ADDRESS", ":50052"),
-		RefundGRPCTLSCertFile:       strings.TrimSpace(os.Getenv("REFUND_GRPC_TLS_CERT_FILE")),
-		RefundGRPCTLSKeyFile:        strings.TrimSpace(os.Getenv("REFUND_GRPC_TLS_KEY_FILE")),
-		RefundGRPCTLSClientCAFile:   strings.TrimSpace(os.Getenv("REFUND_GRPC_TLS_CLIENT_CA_FILE")),
-		RefundGRPCAllowedClientName: strings.TrimSpace(os.Getenv("REFUND_GRPC_ALLOWED_CLIENT_NAME")),
-		IlumaBaseURL:                envDefault("ILUMA_BASE_URL", "https://api.iluma.ai"),
-		XenditBaseURL:               envDefault("XENDIT_BASE_URL", "https://api.xendit.co"),
-		SigningPrivateKeyFile:       strings.TrimSpace(os.Getenv("KEY_FILE_PRIVATE")),
-		SigningPrivateKeyPass:       os.Getenv("KEY_FILE_PRIVATE_PASS"),
-		ExternalHealthChecks:        true,
+		Environment:                    envDefault("NODE_ENV", "development"),
+		HTTPAddress:                    ":" + envDefault("PORT", "4000"),
+		LogLevel:                       envDefault("LOG_LEVEL", "info"),
+		RedisURL:                       envDefault("REDIS_URL", "redis://localhost:6379"),
+		RabbitMQURL:                    envDefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672"),
+		RabbitMQRefundQueue:            envDefault("RABBITMQ_QUEUE", "bridgepay-refund"),
+		RabbitMQEncryptorQueue:         envDefault("RABBITMQ_ENCRYPTOR_QUEUE", "bridgepay-encryptor"),
+		CoreGRPCTLSCAFile:              strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_CA_FILE")),
+		CoreGRPCTLSCertFile:            strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_CERT_FILE")),
+		CoreGRPCTLSKeyFile:             strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_KEY_FILE")),
+		CoreGRPCTLSServerName:          strings.TrimSpace(os.Getenv("CORE_GRPC_TLS_SERVER_NAME")),
+		CoreGRPCAddress:                envDefault("CORE_GRPC_ADDRESS", "localhost:50051"),
+		RefundGRPCListenAddress:        envDefault("REFUND_GRPC_LISTEN_ADDRESS", ":50052"),
+		RefundGRPCTLSCertFile:          strings.TrimSpace(os.Getenv("REFUND_GRPC_TLS_CERT_FILE")),
+		RefundGRPCTLSKeyFile:           strings.TrimSpace(os.Getenv("REFUND_GRPC_TLS_KEY_FILE")),
+		RefundGRPCTLSClientCAFile:      strings.TrimSpace(os.Getenv("REFUND_GRPC_TLS_CLIENT_CA_FILE")),
+		RefundGRPCAllowedClientName:    strings.TrimSpace(os.Getenv("REFUND_GRPC_ALLOWED_CLIENT_NAME")),
+		RefundGRPCBackofficeClientName: strings.TrimSpace(os.Getenv("REFUND_GRPC_BACKOFFICE_CLIENT_NAME")),
+		IlumaBaseURL:                   envDefault("ILUMA_BASE_URL", "https://api.iluma.ai"),
+		XenditBaseURL:                  envDefault("XENDIT_BASE_URL", "https://api.xendit.co"),
+		SigningPrivateKeyFile:          strings.TrimSpace(os.Getenv("KEY_FILE_PRIVATE")),
+		SigningPrivateKeyPass:          os.Getenv("KEY_FILE_PRIVATE_PASS"),
+		ExternalHealthChecks:           true,
 	}
 
 	var err error
@@ -151,6 +154,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.ServiceToServiceKey, err = secret("SERVICE_TO_SERVICE_SECRET", "SERVICE_TO_SERVICE_SECRET_FILE")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.BackofficeJWTSecret, err = secret("BACKOFFICE_JWT_SECRET", "BACKOFFICE_JWT_SECRET_FILE")
 	if err != nil {
 		return Config{}, err
 	}

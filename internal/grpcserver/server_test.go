@@ -17,6 +17,7 @@ import (
 	"bridgepay-refund-go/internal/lifecycle"
 	"bridgepay-refund-go/internal/refund"
 	"bridgepay-refund-go/internal/refundbank"
+	"bridgepay-refund-go/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -29,6 +30,16 @@ type banksFixture struct{}
 func (banksFixture) PublicList(context.Context) (refundbank.PublicListResponse, error) {
 	code := "ID_BCA"
 	return refundbank.PublicListResponse{RetCode: 0, RetMsg: "success", RetData: []refundbank.PublicBank{{Code: &code, Name: "BCA"}}}, nil
+}
+
+func (banksFixture) List(context.Context, []storage.BankFilter) ([]refundbank.Record, error) {
+	return nil, errors.New("unexpected bank List call in gateway fixture")
+}
+func (banksFixture) Update(context.Context, string, *storage.BankStatus, **time.Time) (refundbank.Record, error) {
+	return refundbank.Record{}, errors.New("unexpected bank Update call in gateway fixture")
+}
+func (banksFixture) Sync(context.Context) error {
+	return errors.New("unexpected bank Sync call in gateway fixture")
 }
 
 type ilumaFixture struct{}

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package bridgepay.refund.backoffice.v1;
+
+option go_package = "bridgepay-payment-contracts/backoffice/refund/v1;refundbackofficev1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+
+// Calls require both the backoffice mTLS identity and a valid Core-issued user
+// JWT in gRPC metadata as `authorization: Bearer <token>`.
+service BackofficeRefundService {
+  rpc ListRefunds(ListRequest) returns (JsonResponse);
+  rpc ListBanks(ListRequest) returns (JsonResponse);
+  rpc SetBankEnabled(SetBankEnabledRequest) returns (JsonResponse);
+  rpc SyncBanks(google.protobuf.Empty) returns (JsonResponse);
+}
+
+message ListRequest { google.protobuf.Struct query = 1; }
+message SetBankEnabledRequest { string id = 1; bool enabled = 2; }
+message JsonResponse { google.protobuf.Value data = 1; }

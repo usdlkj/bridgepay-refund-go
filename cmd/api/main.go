@@ -120,7 +120,7 @@ func main() {
 		return true
 	})
 	registerBackgroundHandlers(refundConsumer, ilumaService, webhookService, cfg.RabbitMQMaxRetries)
-	grpcTLS, err := grpcserver.ServerTLSConfig(cfg.RefundGRPCTLSCertFile, cfg.RefundGRPCTLSKeyFile, cfg.RefundGRPCTLSClientCAFile, cfg.RefundGRPCAllowedClientName)
+	grpcTLS, err := grpcserver.ServerTLSConfig(cfg.RefundGRPCTLSCertFile, cfg.RefundGRPCTLSKeyFile, cfg.RefundGRPCTLSClientCAFile, cfg.RefundGRPCAllowedClientName, cfg.RefundGRPCBackofficeClientName)
 	if err != nil {
 		logger.Error("Refund gRPC TLS configuration failed", "error", err)
 		os.Exit(1)
@@ -131,7 +131,10 @@ func main() {
 		os.Exit(1)
 	}
 	grpcService := grpcserver.New(grpcTLS, tracker, logger, grpcserver.Dependencies{
-		Banks: bankService, Iluma: ilumaService, Refund: refundService, Webhook: webhookService,
+		BackofficeJWTSecret:  cfg.BackofficeJWTSecret,
+		GatewayClientName:    cfg.RefundGRPCAllowedClientName,
+		BackofficeClientName: cfg.RefundGRPCBackofficeClientName,
+		Banks:                bankService, Backoffice: backofficeService, Iluma: ilumaService, Refund: refundService, Webhook: webhookService,
 	})
 	grpcErrors := make(chan error, 1)
 	go func() {
